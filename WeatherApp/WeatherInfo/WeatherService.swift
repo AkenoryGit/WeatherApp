@@ -177,3 +177,72 @@ class WeatherService {
         }.resume()
     }
 }
+
+struct HourlyForecast {
+    let time: Date
+    let temperature: Double
+    let symbol: String
+}
+
+extension WeatherService {
+    func fetchHourlyForecast(lat: Double, lon: Double, completion: @escaping ([HourlyForecast]) -> Void) {
+        let urlString = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=\(lat)&lon=\(lon)"
+        guard let url = URL(string: urlString) else {
+            completion([])
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue(userAgentHeader, forHTTPHeaderField: "User-Agent")
+
+        session.dataTask(with: request) { data, _, error in
+            if let error = error {
+                print("Ошибка прогноза: \(error)")
+                completion([])
+                return
+            }
+
+            guard let data = data else {
+                completion([])
+                return
+            }
+
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let response = try decoder.decode(ForecastResponse.self, from: data)
+
+                let calendar = Calendar.current
+                let now = Date()
+
+                let currentHour = calendar.component(.hour, from: now)
+                let roundedHour = ((currentHour / 3) + 1) * 3 % 24
+
+                var targetHours: [Int] = []
+                var hour = roundedHour
+                for _ in 0..<8 {
+                    targetHours.append(hour)
+                    hour = (hour + 3) % 24
+                }
+
+                var forecasts: [HourlyForecast] = []
+
+                for ts in response.properties.timeseries {
+                    let hourComponent = calendar.component(.hour, from: ts.time)
+                    if targetHours.contains(hourComponent),
+                       let temp = ts.data.instant.details?.airTemperature,
+                       let symbol = ts.data.next1Hours?.summary.symbolCode {
+                        forecasts.append(HourlyForecast(time: ts.time, temperature: temp, symbol: symbol))
+                        if forecasts.count == 8 { break }
+                    }
+                }
+
+                completion(forecasts)
+
+            } catch {
+                print("Ошибка парсинга прогноза: \(error)")
+                completion([])
+            }
+        }.resume()
+    }
+}

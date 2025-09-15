@@ -17,6 +17,38 @@ class WeatherViewController: UIViewController {
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
+    
+    private let hourlyTitleLabel: UILabel = {
+        let label = UILabel()
+        let text = "Подробнее на 24 часа"
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .foregroundColor: UIColor.black,
+                .font: UIFont.systemFont(ofSize: 16, weight: .medium)
+            ]
+        )
+        label.attributedText = attributed
+        label.textAlignment = .right
+        label.isUserInteractionEnabled = true
+        return label
+    }()
+
+    private lazy var hourlyCollectionView: UICollectionView = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.itemSize = CGSize(width: 60, height: 100)
+        layout.minimumLineSpacing = 6
+        let cv = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        cv.backgroundColor = .clear
+        cv.showsHorizontalScrollIndicator = false
+        cv.register(HourlyForecastCell.self, forCellWithReuseIdentifier: HourlyForecastCell.identifier)
+        cv.dataSource = self
+        return cv
+    }()
+
+    private var hourlyData: [(time: String, condition: String, temp: String)] = []
 
     private let temperatureLabel = UILabel()
     private let minMaxLabel = UILabel()
@@ -43,6 +75,7 @@ class WeatherViewController: UIViewController {
         setupUI()
         fetchWeather()
         updateDateTime()
+        loadHourlyMockData() 
 
         NotificationCenter.default.addObserver(
             self,
@@ -50,6 +83,25 @@ class WeatherViewController: UIViewController {
             name: .settingsChanged,
             object: nil
         )
+        
+        let tap = UITapGestureRecognizer(target: self, action: #selector(openHourlyDetail))
+        hourlyTitleLabel.addGestureRecognizer(tap)
+        
+        view.addSubview(hourlyTitleLabel)
+        view.addSubview(hourlyCollectionView)
+
+        hourlyTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        hourlyCollectionView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            hourlyTitleLabel.topAnchor.constraint(equalTo: currentDateTimeLabel.bottomAnchor, constant: 20),
+            hourlyTitleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+
+            hourlyCollectionView.topAnchor.constraint(equalTo: hourlyTitleLabel.bottomAnchor, constant: 12),
+            hourlyCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            hourlyCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            hourlyCollectionView.heightAnchor.constraint(equalToConstant: 120)
+        ])
     }
     
     deinit {
@@ -151,6 +203,20 @@ class WeatherViewController: UIViewController {
             }
         }
         
+        service.fetchHourlyForecast(lat: lat, lon: lon) { [weak self] forecasts in
+            DispatchQueue.main.async {
+                self?.hourlyData = forecasts.map { forecast in
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "HH:mm"
+                    let timeString = formatter.string(from: forecast.time)
+                    let iconName = WeatherIconMapper.imageName(for: forecast.symbol)
+                    let temp = String(format: "%.0f°", forecast.temperature)
+                    return (time: timeString, condition: iconName, temp: temp)
+                }
+                self?.hourlyCollectionView.reloadData()
+            }
+        }
+        
         let sunriseService = SunriseService()
         sunriseService.fetchSunriseSunset(lat: lat, lon: lon) { [weak self] sunrise, sunset in
             DispatchQueue.main.async {
@@ -165,6 +231,26 @@ class WeatherViewController: UIViewController {
     
     private func updateDateTime() {
         currentDateTimeLabel.text = formatTime(Date())
+    }
+    
+    private func loadHourlyMockData() {
+        hourlyData = [
+            ("00:00", "weather_cloud", "14°"),
+            ("03:00", "weather_rain", "13°"),
+            ("06:00", "weather_drops", "15°"),
+            ("09:00", "weather_thunderstorm", "18°"),
+            ("12:00", "weather_sun", "23°"),
+            ("15:00", "weather_cloud", "21°"),
+            ("18:00", "weather_rain", "19°"),
+            ("21:00", "weather_sun", "16°"),
+        ]
+        hourlyCollectionView.reloadData()
+    }
+    
+    @objc private func openHourlyDetail() {
+        let vc = HourlyDetailViewController()
+        vc.modalPresentationStyle = .pageSheet
+        present(vc, animated: true)
     }
 }
 
@@ -197,8 +283,34 @@ extension WeatherViewController {
         }
         return formatter.string(from: date)
     }
+    
+    private func formatHour(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        if SettingsManager.shared.timeFormat == 0 {
+            formatter.dateFormat = "h a"
+        } else {
+            formatter.dateFormat = "HH:mm"
+        }
+        return formatter.string(from: date)
+    }
 }
 
 extension Notification.Name {
     static let settingsChanged = Notification.Name("settingsChanged")
+}
+
+extension WeatherViewController: UICollectionViewDataSource {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        return hourlyData.count
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: HourlyForecastCell.identifier,
+            for: indexPath
+        ) as! HourlyForecastCell
+        let item = hourlyData[indexPath.item]
+        cell.configure(time: item.time, condition: item.condition, temp: item.temp)
+        return cell
+    }
 }

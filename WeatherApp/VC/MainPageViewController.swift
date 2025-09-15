@@ -6,12 +6,9 @@
 //
 
 import UIKit
-import CoreLocation
 
 class MainPageViewController: UIPageViewController {
 
-    private let locationManager = CLLocationManager()
-    private let geocoder = CLGeocoder()
     private var pages: [UIViewController] = []
     private let pageControl = UIPageControl()
     let topBar = TopBarView()
@@ -28,8 +25,6 @@ class MainPageViewController: UIPageViewController {
         super.viewDidLoad()
         dataSource = self
         delegate = self
-        
-        locationManager.delegate = self
 
         if pages.isEmpty {
             let weatherVC = WeatherViewController()
@@ -88,41 +83,9 @@ class MainPageViewController: UIPageViewController {
     }
     
     @objc private func handleGeoTap() {
-        let alert = UIAlertController(
-            title: "Использовать геолокацию?",
-            message: "Будет определён ваш текущий город и установлен по умолчанию для прогноза погоды.",
-            preferredStyle: .alert
-        )
-        
-        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-        alert.addAction(UIAlertAction(title: "ОК", style: .default, handler: { _ in
-            let status = CLLocationManager.authorizationStatus()
-            switch status {
-            case .authorizedWhenInUse, .authorizedAlways:
-                self.locationManager.delegate = self
-                self.locationManager.requestLocation()
-            case .denied, .restricted:
-                let settingsAlert = UIAlertController(
-                    title: "Геолокация отключена",
-                    message: "Чтобы включить доступ, откройте Настройки → WeatherApp → Геолокация.",
-                    preferredStyle: .alert
-                )
-                settingsAlert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-                settingsAlert.addAction(UIAlertAction(title: "В Настройки", style: .default, handler: { _ in
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
-                }))
-                self.present(settingsAlert, animated: true)
-            case .notDetermined:
-                self.locationManager.delegate = self
-                self.locationManager.requestWhenInUseAuthorization()
-            @unknown default:
-                break
-            }
-        }))
-        
-        present(alert, animated: true)
+        let onboardingVC = OnboardingViewController()
+        onboardingVC.modalPresentationStyle = .fullScreen
+        present(onboardingVC, animated: true)
     }
     
     @objc private func openSettings() {
@@ -154,57 +117,5 @@ extension MainPageViewController: UIPageViewControllerDataSource, UIPageViewCont
            let index = pages.firstIndex(of: currentVC) {
             pageControl.currentPage = index
         }
-    }
-}
-
-extension MainPageViewController: CLLocationManagerDelegate {
-    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        if status == .authorizedWhenInUse || status == .authorizedAlways {
-            locationManager.requestLocation()
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.first else { return }
-        
-        geocoder.reverseGeocodeLocation(location) { placemarks, _ in
-            if let placemark = placemarks?.first {
-                let city = placemark.locality ?? "Неизвестно"
-                let country = placemark.country ?? ""
-                
-                let coords = LocationData(
-                    city: city,
-                    country: country,
-                    latitude: location.coordinate.latitude,
-                    longitude: location.coordinate.longitude
-                )
-                
-                LocationStorage().save(location: coords)
-                
-                DispatchQueue.main.async {
-                    self.topBar.cityLabel.text = "\(city), \(country)"
-                    
-                    if let first = self.pages.first as? AddLocationViewController {
-                        let weatherVC = WeatherViewController()
-                        weatherVC.latitude = coords.latitude
-                        weatherVC.longitude = coords.longitude
-                        weatherVC.title = "\(city), \(country)"
-                        
-                        self.setPages([weatherVC, AddLocationViewController()])
-                        self.topBar.cityLabel.text = weatherVC.title
-                    }
-                    else if let weatherVC = self.pages.first as? WeatherViewController {
-                        weatherVC.latitude = coords.latitude
-                        weatherVC.longitude = coords.longitude
-                        weatherVC.title = "\(city), \(country)"
-                        weatherVC.refreshWeather()
-                    }
-                }
-            }
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Ошибка получения локации: \(error.localizedDescription)")
     }
 }
