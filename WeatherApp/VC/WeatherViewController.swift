@@ -47,6 +47,15 @@ class WeatherViewController: UIViewController {
         cv.dataSource = self
         return cv
     }()
+    
+    private let dailyTableView: UITableView = {
+        let tv = UITableView()
+        tv.register(DailyForecastCell.self, forCellReuseIdentifier: DailyForecastCell.identifier)
+        tv.isScrollEnabled = true
+        tv.separatorStyle = .none
+        tv.backgroundColor = .clear
+        return tv
+    }()
 
     private var hourlyData: [(time: String, condition: String, temp: String)] = []
 
@@ -59,6 +68,8 @@ class WeatherViewController: UIViewController {
     private let precipitationLabel = WeatherDetailItem(imageName: "rain_icon", text: "--%")
 
     private let detailsStack = UIStackView()
+    
+    private var dailyData: [(day: String, description: String, icon: String, precip: String, temp: String, date: String)] = []
     
     private let currentDateTimeLabel: UILabel = {
         let label = UILabel()
@@ -89,6 +100,10 @@ class WeatherViewController: UIViewController {
         
         view.addSubview(hourlyTitleLabel)
         view.addSubview(hourlyCollectionView)
+        view.addSubview(dailyTableView)
+        dailyTableView.dataSource = self
+
+        dailyTableView.translatesAutoresizingMaskIntoConstraints = false
 
         hourlyTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         hourlyCollectionView.translatesAutoresizingMaskIntoConstraints = false
@@ -100,7 +115,12 @@ class WeatherViewController: UIViewController {
             hourlyCollectionView.topAnchor.constraint(equalTo: hourlyTitleLabel.bottomAnchor, constant: 12),
             hourlyCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             hourlyCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            hourlyCollectionView.heightAnchor.constraint(equalToConstant: 120)
+            hourlyCollectionView.heightAnchor.constraint(equalToConstant: 120),
+            
+            dailyTableView.topAnchor.constraint(equalTo: hourlyCollectionView.bottomAnchor, constant: 20),
+            dailyTableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dailyTableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            dailyTableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
     
@@ -206,14 +226,41 @@ class WeatherViewController: UIViewController {
         service.fetchHourlyForecast(lat: lat, lon: lon) { [weak self] forecasts in
             DispatchQueue.main.async {
                 self?.hourlyData = forecasts.map { forecast in
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "HH:mm"
-                    let timeString = formatter.string(from: forecast.time)
+                    let timeString = self?.formatHour(forecast.time) ?? ""
                     let iconName = WeatherIconMapper.imageName(for: forecast.symbol)
-                    let temp = String(format: "%.0f°", forecast.temperature)
+                    let temp = self?.formatTemperature(forecast.temperature) ?? "--"
                     return (time: timeString, condition: iconName, temp: temp)
                 }
                 self?.hourlyCollectionView.reloadData()
+            }
+        }
+        
+        service.fetch7DayForecast(lat: lat, lon: lon) { [weak self] forecasts in
+            DispatchQueue.main.async {
+                let calendar = Calendar.current
+                let today = calendar.startOfDay(for: Date())
+                
+                let nextDays = forecasts.filter { calendar.startOfDay(for: $0.date) > today }
+                
+                self?.dailyData = nextDays.map { forecast in
+                    let dayFormatter = DateFormatter()
+                    dayFormatter.locale = Locale(identifier: "ru_RU")
+                    dayFormatter.dateFormat = "E"
+                    
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "dd/MM"
+                    
+                    let day = dayFormatter.string(from: forecast.date)
+                    let dateStr = dateFormatter.string(from: forecast.date)
+                    let iconName = WeatherIconMapper.imageName(for: forecast.symbol)
+                    let precip = "\(forecast.precipProb)%"
+                    let description = WeatherSymbols.descriptions[forecast.symbol] ?? forecast.symbol
+                    let temp = "\(self?.formatTemperature(forecast.minTemp) ?? "")–\(self?.formatTemperature(forecast.maxTemp) ?? "")"
+
+                    return (day: day, description: description, icon: iconName, precip: precip, temp: temp, date: dateStr)
+                }
+                
+                self?.dailyTableView.reloadData()
             }
         }
         
@@ -299,7 +346,7 @@ extension Notification.Name {
     static let settingsChanged = Notification.Name("settingsChanged")
 }
 
-extension WeatherViewController: UICollectionViewDataSource {
+extension WeatherViewController: UICollectionViewDataSource, UITableViewDataSource {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         return hourlyData.count
     }
@@ -311,6 +358,17 @@ extension WeatherViewController: UICollectionViewDataSource {
         ) as! HourlyForecastCell
         let item = hourlyData[indexPath.item]
         cell.configure(time: item.time, condition: item.condition, temp: item.temp)
+        return cell
+    }
+    
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return dailyData.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: DailyForecastCell.identifier, for: indexPath) as! DailyForecastCell
+        let item = dailyData[indexPath.row]
+        cell.configure(day: item.day, date: item.date, icon: item.icon, precip: item.precip, description: item.description, temp: item.temp)
         return cell
     }
 }

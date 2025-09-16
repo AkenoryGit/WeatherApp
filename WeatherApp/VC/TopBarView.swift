@@ -27,11 +27,34 @@ class TopBarView: UIView {
     
     let cityLabel: UILabel = {
         let label = UILabel()
-        label.text = "Город"
-        label.font = .boldSystemFont(ofSize: 20)
+        label.font = .boldSystemFont(ofSize: 18)
         label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
+        label.numberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }()
+
+    let countryLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
+        label.numberOfLines = 1
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private lazy var titleStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [cityLabel, countryLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
     }()
     
     override init(frame: CGRect) {
@@ -47,7 +70,7 @@ class TopBarView: UIView {
     private func setupLayout() {
         addSubview(menuButton)
         addSubview(locationButton)
-        addSubview(cityLabel)
+        addSubview(titleStack)
         
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 44),
@@ -62,8 +85,11 @@ class TopBarView: UIView {
             locationButton.widthAnchor.constraint(equalToConstant: 20),
             locationButton.heightAnchor.constraint(equalToConstant: 26),
             
-            cityLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            cityLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
+            titleStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            titleStack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            
+            titleStack.leadingAnchor.constraint(greaterThanOrEqualTo: menuButton.trailingAnchor, constant: 8),
+            titleStack.trailingAnchor.constraint(lessThanOrEqualTo: locationButton.leadingAnchor, constant: -8)
         ])
     }
 }

@@ -245,4 +245,68 @@ extension WeatherService {
             }
         }.resume()
     }
+    
+}
+
+struct DailyForecast {
+    let date: Date
+    let minTemp: Double
+    let maxTemp: Double
+    let symbol: String
+    let precipProb: Int
+}
+
+extension WeatherService {
+    func fetch7DayForecast(lat: Double, lon: Double, completion: @escaping ([DailyForecast]) -> Void) {
+        let urlString = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=\(lat)&lon=\(lon)"
+        guard let url = URL(string: urlString) else {
+            completion([])
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue(userAgentHeader, forHTTPHeaderField: "User-Agent")
+
+        session.dataTask(with: request) { data, _, error in
+            if let error = error {
+                print("Ошибка прогноза: \(error)")
+                completion([])
+                return
+            }
+
+            guard let data = data else {
+                completion([])
+                return
+            }
+
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let response = try decoder.decode(ForecastResponse.self, from: data)
+
+                let calendar = Calendar.current
+                let grouped = Dictionary(grouping: response.properties.timeseries) {
+                    calendar.startOfDay(for: $0.time)
+                }
+
+                var result: [DailyForecast] = []
+
+                for (day, entries) in grouped.sorted(by: { $0.key < $1.key }).prefix(7) {
+                    let temps = entries.compactMap { $0.data.instant.details?.airTemperature }
+                    guard let min = temps.min(), let max = temps.max() else { continue }
+
+                    let symbol = entries.first?.data.next1Hours?.summary.symbolCode ?? "cloudy"
+                    let precip = Int(entries.first?.data.next1Hours?.details?.probabilityOfPrecipitation ?? 0)
+
+                    result.append(DailyForecast(date: day, minTemp: min, maxTemp: max, symbol: symbol, precipProb: precip))
+                }
+
+                completion(result)
+
+            } catch {
+                print("Ошибка парсинга прогноза: \(error)")
+                completion([])
+            }
+        }.resume()
+    }
 }
