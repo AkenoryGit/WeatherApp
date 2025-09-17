@@ -57,7 +57,7 @@ class WeatherViewController: UIViewController {
         return tv
     }()
 
-    private var hourlyData: [(time: String, condition: String, temp: String)] = []
+    private var hourlyData: [HourlyForecast] = []
 
     private let temperatureLabel = UILabel()
     private let minMaxLabel = UILabel()
@@ -281,7 +281,7 @@ class WeatherViewController: UIViewController {
         
         let iconName = WeatherIconMapper.imageName(for: forecast.symbol)
         let precip = "\(forecast.precipProb)%"
-        let temp = "\(formatTemperature(forecast.minTemp))–\(formatTemperature(forecast.maxTemp))"
+        let temp = "\(WeatherFormatter.temperature(forecast.minTemp))–\(WeatherFormatter.temperature(forecast.maxTemp))"
         
         let description = WeatherSymbols.descriptions[forecast.symbol] ?? forecast.symbol
         
@@ -299,10 +299,10 @@ class WeatherViewController: UIViewController {
         service.fetchCurrentWeather(lat: lat, lon: lon) { [weak self] weather in
             guard let self = self, let weather = weather else { return }
             DispatchQueue.main.async {
-                self.temperatureLabel.text = self.formatTemperature(weather.temperature)
+                self.temperatureLabel.text = WeatherFormatter.temperature(weather.temperature)
                 self.descriptionLabel.text = WeatherSymbols.descriptions[weather.symbolCode] ?? weather.description
                 self.cloudLabel.updateText("\(weather.cloudiness ?? 0)%")
-                self.windLabel.updateText(self.formatWind(weather.windSpeed ?? 0))
+                self.windLabel.updateText(WeatherFormatter.wind(weather.windSpeed ?? 0))
                 self.precipitationLabel.updateText("\(weather.precipitationProbability ?? 0)%")
             }
         }
@@ -310,7 +310,7 @@ class WeatherViewController: UIViewController {
         service.fetchDailyForecast(lat: lat, lon: lon) { [weak self] min, max in
             DispatchQueue.main.async {
                 if let min = min, let max = max {
-                    self?.minMaxLabel.text = "\(self?.formatTemperature(min) ?? "") / \(self?.formatTemperature(max) ?? "")"
+                    self?.minMaxLabel.text = "\(WeatherFormatter.temperature(min)) / \(WeatherFormatter.temperature(max))"
                 } else {
                     self?.minMaxLabel.text = "– / –"
                 }
@@ -319,12 +319,7 @@ class WeatherViewController: UIViewController {
         
         service.fetchHourlyForecast(lat: lat, lon: lon) { [weak self] forecasts in
             DispatchQueue.main.async {
-                self?.hourlyData = forecasts.map { forecast in
-                    let timeString = self?.formatHour(forecast.time) ?? ""
-                    let iconName = WeatherIconMapper.imageName(for: forecast.symbol)
-                    let temp = self?.formatTemperature(forecast.temperature) ?? "--"
-                    return (time: timeString, condition: iconName, temp: temp)
-                }
+                self?.hourlyData = forecasts
                 self?.hourlyCollectionView.reloadData()
             }
         }
@@ -347,19 +342,31 @@ class WeatherViewController: UIViewController {
     }
     
     private func updateDateTime() {
-        currentDateTimeLabel.text = formatTime(Date())
+        currentDateTimeLabel.text = WeatherFormatter.time(Date())
     }
     
     private func loadHourlyMockData() {
+        let calendar = Calendar.current
+        let now = Date()
         hourlyData = [
-            ("00:00", "weather_cloud", "14°"),
-            ("03:00", "weather_rain", "13°"),
-            ("06:00", "weather_drops", "15°"),
-            ("09:00", "weather_thunderstorm", "18°"),
-            ("12:00", "weather_sun", "23°"),
-            ("15:00", "weather_cloud", "21°"),
-            ("18:00", "weather_rain", "19°"),
-            ("21:00", "weather_sun", "16°"),
+            HourlyForecast(
+                time: calendar.date(bySettingHour: 0, minute: 0, second: 0, of: now) ?? now,
+                condition: "weather_cloud",
+                tempCelsius: 14,
+                description: "Облачно",
+                wind: 2.0,
+                precip: "20%",
+                cloud: "50%"
+            ),
+            HourlyForecast(
+                time: calendar.date(bySettingHour: 3, minute: 0, second: 0, of: now) ?? now,
+                condition: "weather_rain",
+                tempCelsius: 13,
+                description: "Дождь",
+                wind: 3.0, 
+                precip: "70%",
+                cloud: "90%"
+            )
         ]
         hourlyCollectionView.reloadData()
     }
@@ -367,49 +374,9 @@ class WeatherViewController: UIViewController {
     @objc private func openHourlyDetail() {
         let vc = HourlyDetailViewController()
         vc.hourlyData = hourlyData
+        vc.locationName = self.title
         vc.modalPresentationStyle = .pageSheet
         present(vc, animated: true)
-    }
-}
-
-extension WeatherViewController {
-    private func formatTemperature(_ celsius: Double) -> String {
-        if SettingsManager.shared.temperatureUnit == 0 {
-            return String(format: "%.0f°C", celsius)
-        } else {
-            let fahrenheit = celsius * 9/5 + 32
-            return String(format: "%.0f°F", fahrenheit)
-        }
-    }
-
-    private func formatWind(_ speedMs: Double) -> String {
-        if SettingsManager.shared.windUnit == 0 {
-            let mph = speedMs * 2.23694
-            return String(format: "%.1f mi/h", mph)
-        } else {
-            return String(format: "%.1f м/с", speedMs)
-        }
-    }
-
-    private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
-        if SettingsManager.shared.timeFormat == 0 {
-            formatter.dateFormat = "h:mm a, E d MMMM"
-        } else {
-            formatter.dateFormat = "HH:mm, E d MMMM"
-        }
-        return formatter.string(from: date)
-    }
-    
-    private func formatHour(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        if SettingsManager.shared.timeFormat == 0 {
-            formatter.dateFormat = "h a"
-        } else {
-            formatter.dateFormat = "HH:mm"
-        }
-        return formatter.string(from: date)
     }
 }
 
@@ -428,7 +395,11 @@ extension WeatherViewController: UICollectionViewDataSource, UITableViewDataSour
             for: indexPath
         ) as! HourlyForecastCell
         let item = hourlyData[indexPath.item]
-        cell.configure(time: item.time, condition: item.condition, temp: item.temp)
+        cell.configure(
+            time: WeatherFormatter.time(item.time),
+            condition: item.condition,
+            temp: WeatherFormatter.temperature(item.tempCelsius)
+        )
         return cell
     }
     
