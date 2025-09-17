@@ -84,8 +84,7 @@ class WeatherService {
     func fetchCurrentWeather(lat: Double, lon: Double, completion: @escaping (WeatherData?) -> Void) {
         let urlString = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=\(lat)&lon=\(lon)"
         guard let url = URL(string: urlString) else {
-            completion(nil)
-            return
+            completion(nil); return
         }
 
         var request = URLRequest(url: url)
@@ -93,14 +92,11 @@ class WeatherService {
 
         session.dataTask(with: request) { data, _, error in
             if let error = error {
-                print("Ошибка запроса: \(error)")
-                completion(nil)
-                return
+                print("Ошибка currentWeather: \(error)")
+                completion(nil); return
             }
-
             guard let data = data else {
-                completion(nil)
-                return
+                completion(nil); return
             }
 
             do {
@@ -121,24 +117,20 @@ class WeatherService {
                         precipitationProbability: Int(entry.data.next1Hours?.details?.probabilityOfPrecipitation ?? 0)
                     )
                     completion(weather)
-
                 } else {
                     completion(nil)
                 }
-
             } catch {
-                print("Ошибка парсинга: \(error)")
+                print("Ошибка парсинга currentWeather: \(error)")
                 completion(nil)
             }
-
         }.resume()
     }
 
     func fetchDailyForecast(lat: Double, lon: Double, completion: @escaping (Double?, Double?) -> Void) {
         let urlString = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=\(lat)&lon=\(lon)"
         guard let url = URL(string: urlString) else {
-            completion(nil, nil)
-            return
+            completion(nil, nil); return
         }
 
         var request = URLRequest(url: url)
@@ -146,14 +138,11 @@ class WeatherService {
 
         session.dataTask(with: request) { data, _, error in
             if let error = error {
-                print("Ошибка прогноза: \(error)")
-                completion(nil, nil)
-                return
+                print("Ошибка dailyForecast: \(error)")
+                completion(nil, nil); return
             }
-
             guard let data = data else {
-                completion(nil, nil)
-                return
+                completion(nil, nil); return
             }
 
             do {
@@ -169,9 +158,8 @@ class WeatherService {
                     .compactMap { $0.data.instant.details?.airTemperature }
 
                 completion(temps.min(), temps.max())
-
             } catch {
-                print("Ошибка парсинга прогноза: \(error)")
+                print("Ошибка парсинга dailyForecast: \(error)")
                 completion(nil, nil)
             }
         }.resume()
@@ -187,24 +175,18 @@ struct HourlyForecast {
 extension WeatherService {
     func fetchHourlyForecast(lat: Double, lon: Double, completion: @escaping ([HourlyForecast]) -> Void) {
         let urlString = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=\(lat)&lon=\(lon)"
-        guard let url = URL(string: urlString) else {
-            completion([])
-            return
-        }
+        guard let url = URL(string: urlString) else { completion([]); return }
 
         var request = URLRequest(url: url)
         request.setValue(userAgentHeader, forHTTPHeaderField: "User-Agent")
 
         session.dataTask(with: request) { data, _, error in
             if let error = error {
-                print("Ошибка прогноза: \(error)")
-                completion([])
-                return
+                print("Ошибка hourlyForecast: \(error)")
+                completion([]); return
             }
-
             guard let data = data else {
-                completion([])
-                return
+                completion([]); return
             }
 
             do {
@@ -226,7 +208,6 @@ extension WeatherService {
                 }
 
                 var forecasts: [HourlyForecast] = []
-
                 for ts in response.properties.timeseries {
                     let hourComponent = calendar.component(.hour, from: ts.time)
                     if targetHours.contains(hourComponent),
@@ -236,16 +217,13 @@ extension WeatherService {
                         if forecasts.count == 8 { break }
                     }
                 }
-
                 completion(forecasts)
-
             } catch {
-                print("Ошибка парсинга прогноза: \(error)")
+                print("Ошибка парсинга hourlyForecast: \(error)")
                 completion([])
             }
         }.resume()
     }
-    
 }
 
 struct DailyForecast {
@@ -257,26 +235,20 @@ struct DailyForecast {
 }
 
 extension WeatherService {
-    func fetch7DayForecast(lat: Double, lon: Double, completion: @escaping ([DailyForecast]) -> Void) {
+    func fetchDailyForecasts(lat: Double, lon: Double, completion: @escaping ([DailyForecast]) -> Void) {
         let urlString = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=\(lat)&lon=\(lon)"
-        guard let url = URL(string: urlString) else {
-            completion([])
-            return
-        }
+        guard let url = URL(string: urlString) else { completion([]); return }
 
         var request = URLRequest(url: url)
         request.setValue(userAgentHeader, forHTTPHeaderField: "User-Agent")
 
         session.dataTask(with: request) { data, _, error in
             if let error = error {
-                print("Ошибка прогноза: \(error)")
-                completion([])
-                return
+                print("Ошибка dailyForecasts: \(error)")
+                completion([]); return
             }
-
             guard let data = data else {
-                completion([])
-                return
+                completion([]); return
             }
 
             do {
@@ -290,23 +262,116 @@ extension WeatherService {
                 }
 
                 var result: [DailyForecast] = []
-
-                for (day, entries) in grouped.sorted(by: { $0.key < $1.key }).prefix(7) {
+                for (day, entries) in grouped.sorted(by: { $0.key < $1.key }) {
                     let temps = entries.compactMap { $0.data.instant.details?.airTemperature }
                     guard let min = temps.min(), let max = temps.max() else { continue }
-
                     let symbol = entries.first?.data.next1Hours?.summary.symbolCode ?? "cloudy"
                     let precip = Int(entries.first?.data.next1Hours?.details?.probabilityOfPrecipitation ?? 0)
-
                     result.append(DailyForecast(date: day, minTemp: min, maxTemp: max, symbol: symbol, precipProb: precip))
                 }
-
                 completion(result)
-
             } catch {
-                print("Ошибка парсинга прогноза: \(error)")
+                print("Ошибка парсинга dailyForecasts: \(error)")
                 completion([])
             }
         }.resume()
+    }
+}
+
+struct OpenMeteoResponse: Codable {
+    let daily: OpenMeteoDaily
+}
+
+struct OpenMeteoDaily: Codable {
+    let time: [String]
+    let temperature2mMin: [Double?]
+    let temperature2mMax: [Double?]
+    let precipitationProbabilityMax: [Int?]
+    let weathercode: [Int?]
+
+    enum CodingKeys: String, CodingKey {
+        case time
+        case temperature2mMin = "temperature_2m_min"
+        case temperature2mMax = "temperature_2m_max"
+        case precipitationProbabilityMax = "precipitation_probability_max"
+        case weathercode
+    }
+}
+
+extension WeatherService {
+    func fetchOpenMeteoForecast(lat: Double, lon: Double, days: Int = 16, completion: @escaping ([DailyForecast]) -> Void) {
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,weathercode&forecast_days=\(days)&timezone=auto"
+        guard let url = URL(string: urlString) else { completion([]); return }
+
+        session.dataTask(with: url) { data, _, error in
+            if let error = error {
+                print("Ошибка OpenMeteo: \(error)")
+                completion([]); return
+            }
+            guard let data = data else {
+                completion([]); return
+            }
+
+            do {
+                let decoder = JSONDecoder()
+                let response = try decoder.decode(OpenMeteoResponse.self, from: data)
+
+                let df = DateFormatter()
+                df.dateFormat = "yyyy-MM-dd"
+                df.locale = Locale(identifier: "en_US_POSIX")
+
+                var result: [DailyForecast] = []
+                for i in 0..<response.daily.time.count {
+                    guard let date = df.date(from: response.daily.time[i]) else { continue }
+                    let min = response.daily.temperature2mMin[i] ?? 0
+                    let max = response.daily.temperature2mMax[i] ?? 0
+                    let code = response.daily.weathercode[i] ?? 0
+                    let symbol = OpenMeteoWeatherCode.description(for: code)
+                    let precip = response.daily.precipitationProbabilityMax[i] ?? 0
+                    result.append(DailyForecast(date: date, minTemp: min, maxTemp: max, symbol: symbol, precipProb: precip))
+                }
+                completion(result)
+            } catch {
+                print("Ошибка парсинга OpenMeteo: \(error)")
+                completion([])
+            }
+        }.resume()
+    }
+}
+
+enum OpenMeteoWeatherCode {
+    static let descriptions: [Int: String] = [
+        0: "Ясно",
+        1: "Преимущественно ясно",
+        2: "Переменная облачность",
+        3: "Пасмурно",
+        45: "Туман",
+        48: "Туман с изморозью",
+        51: "Лёгкая морось",
+        53: "Умеренная морось",
+        55: "Сильная морось",
+        56: "Лёгкая ледяная морось",
+        57: "Сильная ледяная морось",
+        61: "Слабый дождь",
+        63: "Умеренный дождь",
+        65: "Сильный дождь",
+        66: "Слабый ледяной дождь",
+        67: "Сильный ледяной дождь",
+        71: "Слабый снег",
+        73: "Умеренный снег",
+        75: "Сильный снег",
+        77: "Снежные зерна",
+        80: "Слабый ливень",
+        81: "Умеренный ливень",
+        82: "Сильный ливень",
+        85: "Слабый снегопад",
+        86: "Сильный снегопад",
+        95: "Гроза",
+        96: "Гроза с градом",
+        99: "Сильная гроза с градом"
+    ]
+    
+    static func description(for code: Int) -> String {
+        return descriptions[code] ?? "Неизвестно"
     }
 }

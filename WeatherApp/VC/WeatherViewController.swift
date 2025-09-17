@@ -79,6 +79,30 @@ class WeatherViewController: UIViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
+    
+    private let dailyHeaderLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Ежедневный прогноз"
+        label.font = .boldSystemFont(ofSize: 18)
+        label.textColor = .label
+        return label
+    }()
+
+    private let toggleDaysButton: UIButton = {
+        let button = UIButton(type: .system)
+        let title = "15 дней"
+        let attributed = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: UIFont.boldSystemFont(ofSize: 16),
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ]
+        )
+        button.setAttributedTitle(attributed, for: .normal)
+        return button
+    }()
+
+    private var isShowing15Days = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -86,7 +110,7 @@ class WeatherViewController: UIViewController {
         setupUI()
         fetchWeather()
         updateDateTime()
-        loadHourlyMockData() 
+        loadHourlyMockData()
 
         NotificationCenter.default.addObserver(
             self,
@@ -100,13 +124,16 @@ class WeatherViewController: UIViewController {
         
         view.addSubview(hourlyTitleLabel)
         view.addSubview(hourlyCollectionView)
+        view.addSubview(dailyHeaderLabel)
+        view.addSubview(toggleDaysButton)
         view.addSubview(dailyTableView)
         dailyTableView.dataSource = self
 
         dailyTableView.translatesAutoresizingMaskIntoConstraints = false
-
         hourlyTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         hourlyCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        dailyHeaderLabel.translatesAutoresizingMaskIntoConstraints = false
+        toggleDaysButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             hourlyTitleLabel.topAnchor.constraint(equalTo: currentDateTimeLabel.bottomAnchor, constant: 20),
@@ -117,11 +144,50 @@ class WeatherViewController: UIViewController {
             hourlyCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             hourlyCollectionView.heightAnchor.constraint(equalToConstant: 120),
             
-            dailyTableView.topAnchor.constraint(equalTo: hourlyCollectionView.bottomAnchor, constant: 20),
+            dailyHeaderLabel.topAnchor.constraint(equalTo: hourlyCollectionView.bottomAnchor, constant: 20),
+            dailyHeaderLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            
+            toggleDaysButton.centerYAnchor.constraint(equalTo: dailyHeaderLabel.centerYAnchor),
+            toggleDaysButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            
+            dailyTableView.topAnchor.constraint(equalTo: dailyHeaderLabel.bottomAnchor, constant: 12),
             dailyTableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             dailyTableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             dailyTableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        
+        toggleDaysButton.addTarget(self, action: #selector(toggleDaysTapped), for: .touchUpInside)
+    }
+    
+    @objc private func toggleDaysTapped() {
+        isShowing15Days.toggle()
+        
+        let newTitle = isShowing15Days ? "7 дней" : "15 дней"
+        let attributed = NSAttributedString(
+            string: newTitle,
+            attributes: [
+                .font: UIFont.boldSystemFont(ofSize: 16),
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ]
+        )
+        toggleDaysButton.setAttributedTitle(attributed, for: .normal)
+        
+        guard let lat = latitude, let lon = longitude else { return }
+        let service = WeatherService()
+        
+        if isShowing15Days {
+            service.fetchOpenMeteoForecast(lat: lat, lon: lon, days: 16) { [weak self] forecasts in
+                DispatchQueue.main.async {
+                    self?.updateDailyData(with: forecasts, limit: 15)
+                }
+            }
+        } else {
+            service.fetchOpenMeteoForecast(lat: lat, lon: lon, days: 8) { [weak self] forecasts in
+                DispatchQueue.main.async {
+                    self?.updateDailyData(with: forecasts, limit: 7)
+                }
+            }
+        }
     }
     
     deinit {
@@ -193,6 +259,34 @@ class WeatherViewController: UIViewController {
             currentDateTimeLabel.bottomAnchor.constraint(equalTo: daylightArcView.bottomAnchor, constant: -8)
         ])
     }
+    
+    private func updateDailyData(with forecasts: [DailyForecast], limit: Int) {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let nextDays = forecasts.filter { calendar.startOfDay(for: $0.date) > today }
+        
+        dailyData = Array(nextDays.prefix(limit)).map { mapDailyForecast($0) }
+        dailyTableView.reloadData()
+    }
+    
+    private func mapDailyForecast(_ forecast: DailyForecast) -> (day: String, date: String, description: String, icon: String, precip: String, temp: String) {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "E"
+        let day = formatter.string(from: forecast.date)
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "dd/MM"
+        let dateString = dateFormatter.string(from: forecast.date)
+        
+        let iconName = WeatherIconMapper.imageName(for: forecast.symbol)
+        let precip = "\(forecast.precipProb)%"
+        let temp = "\(formatTemperature(forecast.minTemp))–\(formatTemperature(forecast.maxTemp))"
+        
+        let description = WeatherSymbols.descriptions[forecast.symbol] ?? forecast.symbol
+        
+        return (day: day, date: dateString, description: description, icon: iconName, precip: precip, temp: temp)
+    }
 
     private func fetchWeather() {
         guard let lat = latitude, let lon = longitude else {
@@ -235,37 +329,13 @@ class WeatherViewController: UIViewController {
             }
         }
         
-        service.fetch7DayForecast(lat: lat, lon: lon) { [weak self] forecasts in
+        service.fetchOpenMeteoForecast(lat: lat, lon: lon, days: 8) { [weak self] forecasts in
             DispatchQueue.main.async {
-                let calendar = Calendar.current
-                let today = calendar.startOfDay(for: Date())
-                
-                let nextDays = forecasts.filter { calendar.startOfDay(for: $0.date) > today }
-                
-                self?.dailyData = nextDays.map { forecast in
-                    let dayFormatter = DateFormatter()
-                    dayFormatter.locale = Locale(identifier: "ru_RU")
-                    dayFormatter.dateFormat = "E"
-                    
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateFormat = "dd/MM"
-                    
-                    let day = dayFormatter.string(from: forecast.date)
-                    let dateStr = dateFormatter.string(from: forecast.date)
-                    let iconName = WeatherIconMapper.imageName(for: forecast.symbol)
-                    let precip = "\(forecast.precipProb)%"
-                    let description = WeatherSymbols.descriptions[forecast.symbol] ?? forecast.symbol
-                    let temp = "\(self?.formatTemperature(forecast.minTemp) ?? "")–\(self?.formatTemperature(forecast.maxTemp) ?? "")"
-
-                    return (day: day, description: description, icon: iconName, precip: precip, temp: temp, date: dateStr)
-                }
-                
-                self?.dailyTableView.reloadData()
+                self?.updateDailyData(with: forecasts, limit: 7)
             }
         }
         
-        let sunriseService = SunriseService()
-        sunriseService.fetchSunriseSunset(lat: lat, lon: lon) { [weak self] sunrise, sunset in
+        SunriseService().fetchSunriseSunset(lat: lat, lon: lon) { [weak self] sunrise, sunset in
             DispatchQueue.main.async {
                 self?.daylightArcView.configure(sunrise: sunrise, sunset: sunset)
             }
@@ -296,6 +366,7 @@ class WeatherViewController: UIViewController {
     
     @objc private func openHourlyDetail() {
         let vc = HourlyDetailViewController()
+        vc.hourlyData = hourlyData
         vc.modalPresentationStyle = .pageSheet
         present(vc, animated: true)
     }
