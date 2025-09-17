@@ -5,7 +5,7 @@
 //  Created by Дмитрий Дудник on 17.09.2025.
 //
 
-import Foundation 
+import Foundation
 
 enum WeatherFormatter {
     static func temperature(_ celsius: Double) -> String {
@@ -36,4 +36,16 @@ enum WeatherFormatter {
         }
         return formatter.string(from: date)
     }
+
+    static func hour(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        if SettingsManager.shared.timeFormat == 0 {
+            formatter.dateFormat = "h a"
+        } else {
+            formatter.dateFormat = "HH:mm"
+        }
+        return formatter.string(from: date)
+    }
 }
+

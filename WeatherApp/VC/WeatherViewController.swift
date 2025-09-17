@@ -12,6 +12,9 @@ class WeatherViewController: UIViewController {
     var latitude: Double?
     var longitude: Double?
     
+    private var refreshTimer: Timer?
+    private var lastWeatherUpdate: Date?
+    
     private let daylightArcView: DaylightArcView = {
         let view = DaylightArcView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -111,6 +114,7 @@ class WeatherViewController: UIViewController {
         fetchWeather()
         updateDateTime()
         loadHourlyMockData()
+        scheduleMinuteTimer()
 
         NotificationCenter.default.addObserver(
             self,
@@ -159,39 +163,51 @@ class WeatherViewController: UIViewController {
         toggleDaysButton.addTarget(self, action: #selector(toggleDaysTapped), for: .touchUpInside)
     }
     
-    @objc private func toggleDaysTapped() {
-        isShowing15Days.toggle()
+    private func scheduleMinuteTimer() {
+        refreshTimer?.invalidate()
         
-        let newTitle = isShowing15Days ? "7 дней" : "15 дней"
-        let attributed = NSAttributedString(
-            string: newTitle,
-            attributes: [
-                .font: UIFont.boldSystemFont(ofSize: 16),
-                .underlineStyle: NSUnderlineStyle.single.rawValue
-            ]
+        let now = Date()
+        let seconds = Calendar.current.component(.second, from: now)
+        let interval = Double(60 - seconds)
+        
+        refreshTimer = Timer.scheduledTimer(
+            timeInterval: interval,
+            target: self,
+            selector: #selector(startRepeatingTimer),
+            userInfo: nil,
+            repeats: false
         )
-        toggleDaysButton.setAttributedTitle(attributed, for: .normal)
+        RunLoop.main.add(refreshTimer!, forMode: .common)
+    }
+    
+    @objc private func startRepeatingTimer() {
+        handleMinuteTick()
         
-        guard let lat = latitude, let lon = longitude else { return }
-        let service = WeatherService()
+        refreshTimer = Timer.scheduledTimer(
+            timeInterval: 60,
+            target: self,
+            selector: #selector(handleMinuteTick),
+            userInfo: nil,
+            repeats: true
+        )
+        RunLoop.main.add(refreshTimer!, forMode: .common)
+    }
+    
+    @objc private func handleMinuteTick() {
+        updateDateTime()
         
-        if isShowing15Days {
-            service.fetchOpenMeteoForecast(lat: lat, lon: lon, days: 16) { [weak self] forecasts in
-                DispatchQueue.main.async {
-                    self?.updateDailyData(with: forecasts, limit: 15)
-                }
+        if let lastUpdate = lastWeatherUpdate {
+            if Date().timeIntervalSince(lastUpdate) >= 600 {
+                refreshWeather()
             }
         } else {
-            service.fetchOpenMeteoForecast(lat: lat, lon: lon, days: 8) { [weak self] forecasts in
-                DispatchQueue.main.async {
-                    self?.updateDailyData(with: forecasts, limit: 7)
-                }
-            }
+            refreshWeather()
         }
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        refreshTimer?.invalidate()
     }
 
     @objc private func handleSettingsChanged() {
@@ -335,6 +351,8 @@ class WeatherViewController: UIViewController {
                 self?.daylightArcView.configure(sunrise: sunrise, sunset: sunset)
             }
         }
+        
+        lastWeatherUpdate = Date()
     }
     
     func refreshWeather() {
@@ -363,7 +381,7 @@ class WeatherViewController: UIViewController {
                 condition: "weather_rain",
                 tempCelsius: 13,
                 description: "Дождь",
-                wind: 3.0, 
+                wind: 3.0,
                 precip: "70%",
                 cloud: "90%"
             )
@@ -377,6 +395,37 @@ class WeatherViewController: UIViewController {
         vc.locationName = self.title
         vc.modalPresentationStyle = .pageSheet
         present(vc, animated: true)
+    }
+    
+    @objc private func toggleDaysTapped() {
+        isShowing15Days.toggle()
+        
+        let newTitle = isShowing15Days ? "7 дней" : "15 дней"
+        let attributed = NSAttributedString(
+            string: newTitle,
+            attributes: [
+                .font: UIFont.boldSystemFont(ofSize: 16),
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ]
+        )
+        toggleDaysButton.setAttributedTitle(attributed, for: .normal)
+        
+        guard let lat = latitude, let lon = longitude else { return }
+        let service = WeatherService()
+        
+        if isShowing15Days {
+            service.fetchOpenMeteoForecast(lat: lat, lon: lon, days: 16) { [weak self] forecasts in
+                DispatchQueue.main.async {
+                    self?.updateDailyData(with: forecasts, limit: 15)
+                }
+            }
+        } else {
+            service.fetchOpenMeteoForecast(lat: lat, lon: lon, days: 8) { [weak self] forecasts in
+                DispatchQueue.main.async {
+                    self?.updateDailyData(with: forecasts, limit: 7)
+                }
+            }
+        }
     }
 }
 
@@ -396,7 +445,7 @@ extension WeatherViewController: UICollectionViewDataSource, UITableViewDataSour
         ) as! HourlyForecastCell
         let item = hourlyData[indexPath.item]
         cell.configure(
-            time: WeatherFormatter.time(item.time),
+            time: WeatherFormatter.hour(item.time),
             condition: item.condition,
             temp: WeatherFormatter.temperature(item.tempCelsius)
         )
