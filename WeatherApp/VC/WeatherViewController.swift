@@ -368,7 +368,14 @@ extension WeatherViewController: UICollectionViewDataSource, UITableViewDataSour
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: DailyForecastCell.identifier, for: indexPath) as! DailyForecastCell
         let item = dailyData[indexPath.row]
-        cell.configure(day: item.day, date: item.date, icon: item.icon, precip: item.precip, description: item.description, temp: item.temp)
+        cell.configure(
+            day: item.day,
+            date: item.date,
+            description: item.description,
+            icon: item.icon,
+            precip: item.precip,
+            temp: item.temp
+        )
         return cell
     }
 }
