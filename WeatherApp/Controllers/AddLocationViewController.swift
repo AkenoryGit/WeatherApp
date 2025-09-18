@@ -72,3 +72,4 @@ extension AddLocationViewController: CitySearchDelegate {
         window.makeKeyAndVisible()
     }
 }
+
